@@ -1,9 +1,7 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[203]:
+#GOOGLE Recurrent Neural Net Price Movement Predictor
 
 
+#imports
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -14,28 +12,17 @@ from collections import deque
 import random
 
 
-# In[206]:
 
-
+#create list of tickers, we want to predict GOOG price using GOOG stock data and other related companeis
 tickers = ['GOOG', 'AAPL', 'AMZN', 'MSFT']
 
 
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[209]:
 
 
 def get_dataframes(tickers_list):
+    """
+    create dictionary of Close and Volume data for each stock
+    """
     stock_dict = {}
     for ticker in tickers_list:
         stock_dict[ticker] = yf.download(ticker, period="7d", interval='1m')
@@ -47,23 +34,14 @@ def get_dataframes(tickers_list):
     
     
 
-
-# In[210]:
-
-
+#create this dictionary
 ov_dict = get_dataframes(tickers)
 
 
-# In[219]:
-
-
-ov_dict['GOOG']
-
-
-# In[221]:
-
-
 def join_dataframes(dict_to_join, tickers_list):
+    """
+    create full dictionary of all data from dictionary
+    """
     df = pd.DataFrame()
     concat_list = []
     for ticker in tickers_list:
@@ -76,100 +54,67 @@ def join_dataframes(dict_to_join, tickers_list):
         df = df[getattr(df, col) != 0]
 
     return df
-        
 
 
-# In[222]:
-
-
+#create this full data frame
 df_full = join_dataframes(ov_dict, tickers)
 
 
-# In[223]:
-
-
-df_full
-
-
-# In[224]:
-
-
 def target_class(current,future):
+    """
+    target class function, 1 when stock goes up, 0 when stock goes down
+    """
     if future>current:
         return 1
     else:
         return 0
 
 
-# In[ ]:
-
-
-
-
-
-# In[225]:
-
 
 def create_target_class(df,stock,shift_by):
+    """
+    creates this target class
+    """
     return list(map(target_class, df[stock], df[stock].shift(shift_by)))
     
 
-
-# In[226]:
-
-
+#create this target class for Google close price
 df_full['Target'] = create_target_class(df_full, 'GOOG_close', -3)
 
 
-# In[227]:
 
 
-df_full
-
-
-# In[228]:
-
-
+#Show distribution of target classes
 plt.hist(df_full['Target'])
-
+plt.show()
 
 # In[229]:
 
 
 def create_val_set(df,val_size):
+    """
+    creates a main training and validation set
+    """
     length = len(df)
     main = df[:int(length*(1-val_size))]
     val = df[int(length*(1-val_size)):]
     return main, val
 
 
-# In[230]:
-
-
+#create main and val sets for df_full
 main_df, val_df = create_val_set(df_full, 0.05)
 
 
-# In[ ]:
+from sklearn import preprocessing  
 
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[231]:
-
-
-from sklearn import preprocessing  # pip install sklearn ... if you don't have it!
 
 def preprocess_df(df, max_seq):
-    for col in df.columns:  # go through all of the columns
-        if col != "Target":  # normalize all ... except for the target itself!
-            df[col] = df[col].pct_change()  # pct change "normalizes" the different currencies (each crypto coin has vastly diff values, we're really more interested in the other coin's movements)
+    """
+    normalization, scaling, and rebalancing of data, and create sequences to run through neural net
+    """
+    for col in df.columns:  
+        if col != "Target": 
+            df[col] = df[col].pct_change() 
             df.dropna(inplace=True)
             df[col] = preprocessing.scale(df[col].values)
     sequential_data = []
@@ -177,58 +122,47 @@ def preprocess_df(df, max_seq):
         sequence = df.drop("Target", axis = 1).iloc[i:i+max_seq]
         target = df['Target'].iloc[i+max_seq]
         sequential_data.append((sequence,target))
-        buys = []  # list that will store our buy sequences and targets
-    sells = []  # list that will store our sell sequences and targets
+        buys = []  
+    sells = []  
 
-    for seq, target in sequential_data:  # iterate over the sequential data
-        if target == 0:  # if it's a "not buy"
-            sells.append([seq, target])  # append to sells list
-        elif target == 1:  # otherwise if the target is a 1...
-            buys.append([seq, target])  # it's a buy!
+    for seq, target in sequential_data:  
+        if target == 0:  
+            sells.append([seq, target])  
+        elif target == 1:  
 
-    random.shuffle(buys)  # shuffle the buys
-    random.shuffle(sells)  # shuffle the sells!
+    random.shuffle(buys)  
+    random.shuffle(sells)  
 
-    lower = min(len(buys), len(sells))  # what's the shorter length?
+    lower = min(len(buys), len(sells)) 
 
-    buys = buys[:lower]  # make sure both lists are only up to the shortest length.
-    sells = sells[:lower]  # make sure both lists are only up to the shortest length.
+    buys = buys[:lower]  
+    sells = sells[:lower]  
 
-    sequential_data = buys+sells  # add them together
-    random.shuffle(sequential_data)  # another shuffle, so the model doesn't get confused with all 1 class then the other.
+    sequential_data = buys+sells  
+    random.shuffle(sequential_data)  
     X = []
     y = []
 
-    for seq, target in sequential_data:  # going over our new sequential data
-        X.append(seq)  # X is the sequences
-        y.append(target)  # y is the targets/labels (buys vs sell/notbuy)
+    for seq, target in sequential_data:  
+        X.append(seq)  
+        y.append(target)  
 
-    return np.array(X), y  # return X and y...and make X a numpy array!
-
-        
-            
-            
+    return np.array(X), y 
 
 
-# In[232]:
 
-
+#create training and validaiton sets
 X_train, y_train = preprocess_df(main_df, 60)
 X_validation, y_validation = preprocess_df(val_df, 60)
 
 
-# In[240]:
-
-
+#imports for RNN architecture
 import time
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, BatchNormalization
 
-
-# In[234]:
-
-
+#create RNNN model (call model.summary() for model summary
 model = Sequential()
 model.add(LSTM(256, input_shape=(X_train.shape[1:]), return_sequences=True))
 model.add(Dropout(0.2))
@@ -248,15 +182,6 @@ model.add(Dropout(0.2))
 model.add(Dense(2, activation='softmax'))
 
 
-# In[235]:
-
-
-model.summary()
-
-
-# In[236]:
-
-
 opt = tf.keras.optimizers.Adam(learning_rate=0.0001, decay=1e-6)
 
 # Compile model
@@ -267,9 +192,7 @@ model.compile(
 )
 
 
-# In[237]:
-
-
+#fit model to X_train and y_train
 history = model.fit(
     X_train, np.array(y_train),
     batch_size=64,
@@ -278,86 +201,22 @@ history = model.fit(
 )
 
 
-# In[241]:
-
-
+#plot accuracy and loss for validaiton and training sets
 pd.DataFrame(model.history.history).plot()
+plt.show()
 
-
-# In[242]:
-
-
+#create predictions from X_Train
 predictions = model.predict(X_train)
 predictions = np.argmax(predictions, axis=1)
 
 
-# In[187]:
-
-
+#evaluation of model (around 60%)
 from sklearn.metrics import classification_report, confusion_matrix
-
-
-# In[201]:
-
-
 print(classification_report(y_train,predictions))
-
-
-# In[202]:
-
-
 print(confusion_matrix(y_train,predictions))
 
 
-# In[244]:
 
-
-next_minute_data = yf.download("GOOG", period = '5m', interval='1m')
-
-
-# In[246]:
-
-
-propertynext_minute_data.iloc[1:5]
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
 
 
 
